@@ -36,14 +36,29 @@ module ethernet_test_top(
 	output wire MDC_pin,
 	inout wire MDIO_pin,
 	
+	input wire [1:0] adc_cha_p,
+	input wire [1:0] adc_cha_n,
+
+	input wire [1:0] adc_chb_p,
+	input wire [1:0] adc_chb_n,
+		
+	input wire adc_bit_clk_p,
+	input wire adc_bit_clk_n,
+		
+	input wire adc_frame_sync_p,
+	input wire adc_frame_sync_n,
+	
 	output wire [7:0] leds,
 	input wire [7:0] sw,
 	input wire [5:0] btn,
 	
 	output wire rs232_tx,
-	input wire rs232_rx
+	input wire rs232_rx,
+	
+	output wire fe_clock
    );
 
+   localparam ADC_PACKET_SIZE	= 10'd128;
 	// System clock
 	//wire clk_100;
 	//IBUFG ibufg_100 (
@@ -60,6 +75,7 @@ module ethernet_test_top(
 		//.RESET(pll_rst),
 		.LOCKED(pll_locked));
 
+	assign fe_clock = clk_125;
 	// PLL reset logic
 	// Based on http://forums.xilinx.com/t5/Spartan-Family-FPGAs/RESET-SIGNALS/m-p/133182#M10198
 	/*
@@ -89,6 +105,8 @@ module ethernet_test_top(
 	
 	wire baud_clk;
 	assign baud_clk = clk_8;
+	
+	wire adc_clk;
 
 
 	// Hold the FSMs in reset until the PLL has locked
@@ -146,7 +164,24 @@ module ethernet_test_top(
 	edge_detect edge_detect_s1 (.async_sig(btn[0]), .clk(dsp_clk), .rise(), .fall(sw_send_packet));
 	edge_detect edge_detect_s2 (.async_sig(btn[1]), .clk(dsp_clk), .rise(), .fall(sw_reconfig));
 
-	
+	/*
+	config_mux config_mux_inst (
+		.clk(dsp_clk),
+		.reset(~gemac_ready),
+
+		.rx_ready(config_data_out_en),
+		.rx_data(udp_data_out)
+
+		.tx_full : in  STD_LOGIC;
+		.tx_wr : out  STD_LOGIC;
+		.tx_data : out  STD_LOGIC_VECTOR (31 downto 0);
+
+		.address : out STD_LOGIC_VECTOR (15 downto 0);
+		.wr : out STD_LOGIC;
+		.rd : out STD_LOGIC;
+		.dout : out STD_LOGIC_VECTOR (31 downto 0);
+		.din : in STD_LOGIC_VECTOR (31 downto 0));
+	*/
 	// The top module of the USRP2 MAC core
 	localparam dw = 32; // WB data bus width
 	localparam aw = 8; // WB address bus width
@@ -210,6 +245,8 @@ module ethernet_test_top(
 		.debug(gemac_debug),
 		.ready(gemac_ready)); // Signal to rest of the system that negotiation is complete
 
+	wire [31:0] adc_fifo_d;
+	wire adc_data_re, adc_fifo_ae;
 
 	// Send out Ethernet packets
 	packet_sender packet_sender (
@@ -219,14 +256,55 @@ module ethernet_test_top(
 		.wr_data_o(wr2_data),
 		.wr_dst_rdy_i(wr2_dst_rdy),
 		.wr_src_rdy_o(wr2_src_rdy),
+		// primary interface: Configuration Data
+		.pri_fifo_d,
+		.pri_packet_size_i,
+		.pri_fifo_req,
+		.pri_fifo_rd,
+		// secondary interface: ADC Data
+		.sec_fifo_d(adc_fifo_d),
+		.sec_packet_size_i(ADC_PACKET_SIZE),
+		.sec_fifo_req(~adc_fifo_ae),
+		.sec_fifo_rd(adc_data_re));
 		
-		.packet_size_i({sw[7:0], 1'b0}),
-		.start(sw_send_packet));
+	adc_sample_fifo adc_sample_fifo_inst (
+	  .rst(~gemac_ready), // input rst
+	  .wr_clk(adc_clk), // input wr_clk
+	  .rd_clk(dsp_clk), // input rd_clk
+	  .din(adc_data), // input [31 : 0] din
+	  .wr_en(adc_data_we), // input wr_en
+	  .rd_en(adc_data_re), // input rd_en
+	  .prog_empty_thresh(ADC_PACKET_SIZE), // input [9 : 0] prog_empty_thresh
+	  .dout(adc_fifo_d), // output [31 : 0] dout
+	  .full(), // output full
+	  .overflow(), // output overflow
+	  .empty(), // output empty
+	  .prog_empty(adc_fifo_ae) // output prog_empty
+	);
+	
+	adc_rx adc_rx (
+		.clk(dsp_clk),
+		.reset(reset),
 		
+		.adc_cha_p(adc_cha_p),
+		.adc_cha_n(adc_cha_n),
+
+		.adc_chb_p(adc_chb_n),
+		.adc_chb_n(adc_chb_n),
+		
+		.bit_clk_p(adc_bit_clk_p),
+		.bit_clk_n(adc_bit_clk_n),
+		
+		.frame_sync_p(adc_frame_sync_p),
+		.frame_sync_n(adc_frame_sync_n),
+		
+		.clk_adc(adc_clk),
+		.data_we(adc_data_we),
+		.data(adc_data));
 	
 	// Receive Ethernet packets
-	wire [7:0] udp_data_out;
-	wire udp_data_out_en;
+	wire [31:0] udp_data_out;
+	wire config_data_out_en;
 	
 	packet_receiver packet_receiver (
 		.clk(dsp_clk),
@@ -256,6 +334,7 @@ module ethernet_test_top(
 		.armed(scope_armed),
 		.triggered(scope_triggered)
 	);
+	
 
 	
 
