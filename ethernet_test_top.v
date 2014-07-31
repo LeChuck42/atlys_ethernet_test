@@ -245,9 +245,13 @@ module ethernet_test_top(
 		.debug(gemac_debug),
 		.ready(gemac_ready)); // Signal to rest of the system that negotiation is complete
 
-	wire [31:0] adc_fifo_d;
+	wire [31:0] pri_fifo_d, adc_fifo_d;
 	wire adc_data_re, adc_fifo_ae;
 
+	wire [8:0] pri_packet_size_i, sec_packet_size_i;
+	wire pri_fifo_req, pri_fifo_rd;
+	assign pri_packet_size_i = 9'd128;
+	assign sec_packet_size_i = 9'd128;
 	// Send out Ethernet packets
 	packet_sender packet_sender (
 		.clk(dsp_clk),
@@ -266,7 +270,9 @@ module ethernet_test_top(
 		.sec_packet_size_i(ADC_PACKET_SIZE),
 		.sec_fifo_req(~adc_fifo_ae),
 		.sec_fifo_rd(adc_data_re));
-		
+	
+	wire [31:0] adc_data;
+	wire adc_data_we;
 	adc_sample_fifo adc_sample_fifo_inst (
 	  .rst(~gemac_ready), // input rst
 	  .wr_clk(adc_clk), // input wr_clk
@@ -284,7 +290,7 @@ module ethernet_test_top(
 	
 	adc_rx adc_rx (
 		.clk(dsp_clk),
-		.reset(reset),
+		.reset(~gemac_ready),
 		
 		.adc_cha_p(adc_cha_p),
 		.adc_cha_n(adc_cha_n),
@@ -304,7 +310,7 @@ module ethernet_test_top(
 	
 	// Receive Ethernet packets
 	wire [31:0] udp_data_out;
-	wire config_data_out_en;
+	wire udp_data_out_en;
 	
 	packet_receiver packet_receiver (
 		.clk(dsp_clk),

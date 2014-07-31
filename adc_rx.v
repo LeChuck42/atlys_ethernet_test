@@ -39,7 +39,6 @@ module adc_rx(
 	output [31:0] data
     );
 
-	wire clk_adc;
 	wire [34:0] deserialized_data;
 	reg frame_sync;
 	
@@ -60,7 +59,6 @@ module adc_rx(
     .CLK_IN_P(bit_clk_p),      // Differential clock from IOB
     .CLK_IN_N(bit_clk_n),      // Differential clock from IOB
     .CLK_DIV_OUT(clk_adc),   // Slow clock output
-    .CLK_RESET(clk), //clocking logic reset
     .IO_RESET(reset)  //system reset
 	);
 	
@@ -70,7 +68,7 @@ module adc_rx(
 			frame_sync <= 0;
 			bitslip_en <= 0;
 		end else begin
-			frame_sync = ^deserialized_data[34:28];  // synched if frame signal is steady for one cycle
+			frame_sync <= ^deserialized_data[34:28];  // synched if frame signal is steady for one cycle
 			
 			if (bitslip_en == 0)
 				bitslip_en <= ~^deserialized_data[34:28];
